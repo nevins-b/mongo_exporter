@@ -9,10 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/nevins-b/commgo"
 	"github.com/nevins-b/mongo_exporter/collector"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/log"
 	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 const subsystem = "exporter"
@@ -21,7 +23,7 @@ var (
 	listenAddress     = flag.String("web.listen-address", ":9107", "Address to listen on for web interface and telemetry.")
 	metricsPath       = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
 	mongoServer       = flag.String("mongo.server", "localhost:27017", "Address of the Mongo server to monitor")
-	enabledCollectors = flag.String("collectors.enabled", "connection,operations", "Comma-separated list of collectors to use.")
+	enabledCollectors = flag.String("collectors.enabled", "connection,operations,network,lock,cursor", "Comma-separated list of collectors to use.")
 
 	collectorLabelNames = []string{"collector", "result"}
 
@@ -55,11 +57,22 @@ func (m MongoCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	defer session.Close()
+	cmd := &bson.M{
+		"serverStatus": 1,
+	}
+
+	status := &commgo.ServerStatus{}
+
+	if err := session.DB("local").Run(&cmd, &status); err != nil {
+		log.Errorf("%v", err)
+		return
+	}
+
 	wg := sync.WaitGroup{}
 	wg.Add(len(m.collectors))
 	for name, c := range m.collectors {
 		go func(name string, c collector.Collector, session *mgo.Session) {
-			Execute(name, c, ch, session)
+			Execute(name, c, ch, status)
 			wg.Done()
 		}(name, c, session)
 	}
@@ -67,9 +80,9 @@ func (m MongoCollector) Collect(ch chan<- prometheus.Metric) {
 	scrapeDurations.Collect(ch)
 }
 
-func Execute(name string, c collector.Collector, ch chan<- prometheus.Metric, session *mgo.Session) {
+func Execute(name string, c collector.Collector, ch chan<- prometheus.Metric, status *commgo.ServerStatus) {
 	begin := time.Now()
-	err := c.Update(ch, session)
+	err := c.Update(ch, status)
 	duration := time.Since(begin)
 	var result string
 

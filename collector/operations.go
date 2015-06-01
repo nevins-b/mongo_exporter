@@ -3,9 +3,6 @@ package collector
 import (
 	"github.com/nevins-b/commgo"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/log"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 )
 
 type operationCollector struct {
@@ -51,25 +48,13 @@ func NewOperationCollector() (Collector, error) {
 	}, nil
 }
 
-func (c *operationCollector) Update(ch chan<- prometheus.Metric, session *mgo.Session) (err error) {
-
-	cmd := &bson.M{
-		"serverStatus": 1,
-	}
-
-	result := &commgo.ServerStatus{}
-
-	if err := session.DB("local").Run(&cmd, &result); err != nil {
-		log.Errorf("%v", err)
-		return err
-	}
-
-	c.command.Set(float64(result.Opcounters.Command))
-	c.delete.Set(float64(result.Opcounters.Delete))
-	c.getmore.Set(float64(result.Opcounters.Getmore))
-	c.insert.Set(float64(result.Opcounters.Insert))
-	c.query.Set(float64(result.Opcounters.Query))
-	c.update.Set(float64(result.Opcounters.Update))
+func (c *operationCollector) Update(ch chan<- prometheus.Metric, status *commgo.ServerStatus) (err error) {
+	c.command.Set(float64(status.Opcounters.Command))
+	c.delete.Set(float64(status.Opcounters.Delete))
+	c.getmore.Set(float64(status.Opcounters.Getmore))
+	c.insert.Set(float64(status.Opcounters.Insert))
+	c.query.Set(float64(status.Opcounters.Query))
+	c.update.Set(float64(status.Opcounters.Update))
 
 	c.command.Collect(ch)
 	c.delete.Collect(ch)
